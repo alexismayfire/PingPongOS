@@ -7,6 +7,7 @@
 #ifndef __PINGPONG__
 #define __PINGPONG__
 
+#define STACKSIZE 32768
 #define _XOPEN_SOURCE 600	// para evitar erros POSIX no MacOS X
 
 #include "datatypes.h"		// estruturas de dados necessárias

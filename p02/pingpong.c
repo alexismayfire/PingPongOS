@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ucontext.h>
+#include <sys/signal.h>
 
 #include "datatypes.h"
 #include "pingpong.h"
@@ -15,24 +16,35 @@ int proximo;
 void pingpong_init () {
     setvbuf(stdout, 0, _IONBF, 0);
     proximo = 1;
-    //getcontext(&ContextMain);
+
+    getcontext(&ContextMain);
+
+    char *stack = malloc (STACKSIZE);
+    if (stack)
+    {
+        ContextMain.uc_stack.ss_sp = stack;
+        ContextMain.uc_stack.ss_size = STACKSIZE;
+        ContextMain.uc_stack.ss_flags = 0;
+        ContextMain.uc_link = 0;
+    }
 }
 
 // Cria uma nova tarefa. Retorna um ID> 0 ou erro.
 int task_create (task_t *task, void (*start_func)(void *), void *arg) {
+    ucontext_t context;
+    getcontext (&context);
+
     int id = proximo;
     proximo++;
     task->tid = id;
-    getcontext(&(task->context));
 
     char *stack = malloc (STACKSIZE);
-
     if (stack)
     {
-        task->context.uc_stack.ss_sp = stack ;
-        task->context.uc_stack.ss_size = STACKSIZE;
-        task->context.uc_stack.ss_flags = 0;
-        task->context.uc_link = 0;
+        context.uc_stack.ss_sp = stack;
+        context.uc_stack.ss_size = STACKSIZE;
+        context.uc_stack.ss_flags = 0;
+        context.uc_link = 0;
     }
     else
     {
@@ -40,7 +52,8 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
         return -1;
     }
 
-    makecontext (&(task->context), (void *)start_func, 1, arg);
+    makecontext (&context, (void *)start_func, 1, arg);
+    task->context = context;
 
     return task->tid;
 }
@@ -51,7 +64,12 @@ void task_exit (int exitCode) {
 
 // alterna a execução para a tarefa indicada
 int task_switch (task_t *task) {
-    swapcontext(&ContextMain, &(task->context));
+    task_t *tarefa_atual;
+    getcontext(&ContextMain);
+    // Aqui agora dá segmentation fault... mas não fica em loop eterno
+    tarefa_atual->context = ContextMain;
+    swapcontext(&(tarefa_atual->context), &(task->context));
+
     return task->tid;
 }
 

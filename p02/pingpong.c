@@ -11,7 +11,7 @@
 #endif
 
 ucontext_t ContextMain;
-task_t *current_task;
+task_t *current_task, *main_task;
 int last_task_id;
 
 void pingpong_init () {
@@ -31,6 +31,7 @@ void pingpong_init () {
 
     current_task = (task_t *)malloc(sizeof(task_t));
     current_task->context = ContextMain;
+    main_task = current_task;
 }
 
 // Cria uma nova tarefa. Retorna um ID> 0 ou erro.
@@ -63,6 +64,11 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
 
 // Termina a tarefa corrente, indicando um valor de status encerramento
 void task_exit (int exitCode) {
+   /*
+    * Criando uma task_t no init() pra ter referência da main parece ter funcionado
+    * Precisa ver com os outros projetos!
+   */
+   task_switch(main_task);
 }
 
 // alterna a execução para a tarefa indicada

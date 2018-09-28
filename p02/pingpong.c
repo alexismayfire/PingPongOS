@@ -12,11 +12,11 @@
 
 ucontext_t ContextMain;
 task_t *current_task;
-int proximo;
+int last_task_id;
 
 void pingpong_init () {
     setvbuf(stdout, 0, _IONBF, 0);
-    proximo = 1;
+    last_task_id = 0;
 
     getcontext(&ContextMain);
 
@@ -38,9 +38,8 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
     ucontext_t context;
     getcontext (&context);
 
-    int id = proximo;
-    proximo++;
-    task->tid = id;
+    last_task_id++;
+    task->tid = last_task_id;
 
     char *stack = malloc (STACKSIZE);
     if (stack)
@@ -87,5 +86,5 @@ int task_switch (task_t *task) {
 
 // retorna o identificador da tarefa corrente (main eh 0)
 int task_id () {
-    return proximo;
+    return current_task->tid;
 }

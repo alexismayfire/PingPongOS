@@ -12,12 +12,13 @@
 #endif
 
 ucontext_t ContextMain;
-task_t *current_task, *main_task, *dispatcher, *task_queue;
+task_t *current_task, *main_task, *dispatcher, *task_queue, *ready_tasks;
 int last_task_id;
 
 task_t *scheduler () {
-
-    return task_queue->next;
+    task_t *next = task_queue;
+    queue_remove((queue_t **) &task_queue, (queue_t *) task_queue);
+    return next;
 }
 
 void dispatcher_body () {
@@ -26,9 +27,11 @@ void dispatcher_body () {
     while (user_tasks > 0) {
         task_t *next = scheduler ();
         if (next) {
+            // Se uma tarefa for removida, vamos colocar ela no final da fila
+            queue_append((queue_t **) &task_queue, (queue_t *) next);
             task_switch(next);
-            queue_remove((queue_t **) task_queue, (queue_t *) next);
         }
+        user_tasks = queue_size((queue_t *) task_queue);
     }
 
     task_exit(0);
@@ -36,10 +39,12 @@ void dispatcher_body () {
 
 void pingpong_init () {
     setvbuf(stdout, 0, _IONBF, 0);
+    last_task_id = 0;
+
     dispatcher = (task_t *)malloc(sizeof(task_t));
     task_create(dispatcher, dispatcher_body, 0);
     task_queue = NULL;
-    last_task_id = 0;
+    ready_tasks = NULL;
 
     getcontext(&ContextMain);
 
@@ -59,11 +64,11 @@ void pingpong_init () {
 
 // Cria uma nova tarefa. Retorna um ID> 0 ou erro.
 int task_create (task_t *task, void (*start_func)(void *), void *arg) {
-    ucontext_t context;
-    getcontext (&context);
-
     last_task_id++;
     task->tid = last_task_id;
+
+    ucontext_t context;
+    getcontext (&context);
 
     char *stack = malloc (STACKSIZE);
     if (stack)
@@ -81,6 +86,7 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
 
     makecontext (&context, (void *)start_func, 1, arg);
     task->context = context;
+    task->exitCode = -1;
 
     queue_append((queue_t **) &task_queue, (queue_t *) task);
 
@@ -93,6 +99,16 @@ void task_exit (int exitCode) {
     * Criando uma task_t no init() pra ter referência da main parece ter funcionado
     * Precisa ver com os outros projetos!
    */
+   current_task->exitCode = exitCode;
+   /*
+    * Aqui estou forçando uma verificação de tid (dispatcher sempre 1)
+    * Precisa pensar em outra maneira mais coerente
+    */
+   if (0 == exitCode && current_task->tid > 1) {
+       queue_remove((queue_t **) &task_queue, (queue_t *) current_task);
+       task_yield();
+   }
+
    task_switch(main_task);
 }
 
@@ -108,9 +124,14 @@ int task_switch (task_t *task) {
     // Agora funciona o teste1, mas o 2 e o 3 só executa a última
     task_t *temp;
     temp = current_task;
+    // Vamos testar se a tarefa encerrou para remover da fila
+    /*
+    if (current_task->exitCode == 0) {
+        queue_remove((queue_t **) task_queue, (queue_t *) current_task);
+    }
+     */
     current_task = task;
     swapcontext(&(temp->context), &(current_task->context));
-
 
     return task->tid;
 }

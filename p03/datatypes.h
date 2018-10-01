@@ -15,6 +15,7 @@ typedef struct task_t
   struct task_t *next;
   ucontext_t context;
   int tid;
+  int exitCode;
 } task_t ;
 
 // estrutura que define um semáforo

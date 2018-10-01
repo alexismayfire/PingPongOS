@@ -17,8 +17,9 @@ typedef struct task_t
   int tid;
   int prio;
   int dynamic_prio;
-  int system_task;
   int quantum;
+  int status;
+  int system_task;
   int exitCode;
 } task_t ;
 

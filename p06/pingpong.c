@@ -20,6 +20,7 @@ int last_task_id, alfa_aging = -1;
 
 struct sigaction action;
 struct itimerval timer;
+struct timeval tv;
 
 void signal_handler () {
     // Se for tarefa de sistema, não faz nada!
@@ -221,4 +222,11 @@ int task_getprio (task_t *task) {
     } else {
         return current_task->prio;
     }
+}
+
+unsigned int systime () {
+    gettimeofday(&tv, NULL);
+    unsigned int current_time = (tv.tv_sec * 1000) + (tv.tv_usec) / 1000;
+
+    return current_time;
 }

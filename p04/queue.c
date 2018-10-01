@@ -104,11 +104,11 @@ queue_t *queue_remove (queue_t **queue, queue_t *elem) {
             elem->prev = NULL;
             elem->next = NULL;
 
-            return elem;
+            break;
         }
     }
 
-    //printf("Implementar");
+    return elem;
 }
 
 void queue_print (char *name, queue_t *queue, void print_elem (void*) ) {

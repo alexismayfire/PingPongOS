@@ -15,6 +15,11 @@ typedef struct task_t
   struct task_t *next;
   ucontext_t context;
   int tid;
+  int prio;
+  int dynamic_prio;
+  int quantum;
+  int status;
+  int system_task;
   int exitCode;
 } task_t ;
 

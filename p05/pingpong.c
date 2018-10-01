@@ -32,6 +32,7 @@ void signal_handler () {
     }
 }
 
+#ifdef PRIORITY
 task_t *scheduler () {
     task_t *next = task_queue, *temp;
 
@@ -66,6 +67,16 @@ task_t *scheduler () {
 
     return next;
 }
+#else
+task_t *scheduler () {
+    task_t *next = task_queue;
+
+    queue_remove((queue_t **) &task_queue, (queue_t *) next);
+    queue_append((queue_t **) &task_queue, (queue_t *) next);
+
+    return next;
+}
+#endif
 
 void dispatcher_body () {
     int user_tasks = queue_size((queue_t *) task_queue);

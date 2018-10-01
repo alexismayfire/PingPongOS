@@ -186,9 +186,11 @@ void task_exit (int exitCode) {
     current_task->exitCode = exitCode;
 
     // Agora verifico se é uma tarefa de sistema
-    if (0 == exitCode && 0 == current_task->system_task) {
+    if (0 == exitCode) { //&& 0 == current_task->system_task) {
         // Se a tarefa saiu com código 0, podemos remover da lista
-        queue_remove((queue_t **) &task_queue, (queue_t *) current_task);
+        if (0 == current_task->system_task) {
+            queue_remove((queue_t **) &task_queue, (queue_t *) current_task);
+        }
         printf("Task %d exit: running time %u ms, cpu time  %u ms, %u activations\n",
                 current_task->tid, systime(),
                 current_task->cpu_time, current_task->activations
@@ -223,6 +225,7 @@ int task_id () {
 }
 
 void task_yield () {
+    dispatcher->activations++;
     task_switch(dispatcher);
 }
 

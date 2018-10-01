@@ -68,6 +68,10 @@ void task_exit (int exitCode) {
     * Criando uma task_t no init() pra ter referência da main parece ter funcionado
     * Precisa ver com os outros projetos!
    */
+   if (exitCode > 0) {
+       task_switch(main_task);
+   }
+
    task_switch(main_task);
 }
 

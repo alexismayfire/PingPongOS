@@ -17,22 +17,26 @@
 ucontext_t ContextMain;
 task_t *current_task, *main_task, *dispatcher, *task_queue, *ready_tasks;
 int last_task_id, alfa_aging = -1;
+unsigned int clock = 0;
 
 struct sigaction action;
 struct itimerval timer;
-struct timeval tv;
 
 void signal_handler () {
+    clock++;
     // Se for tarefa de sistema, não faz nada!
     if (current_task->system_task == 0) {
         // Se a tarefa ainda tem quantum, só decrementa; se zerou, volta pro dispatcher
         current_task->quantum--;
         if (current_task->quantum == 0) {
+            // Incrementa o CPU time quando a tarefa recebe o processador
+            current_task->cpu_time += (systime() - current_task->last_called_time);
             task_yield();
         }
     }
 }
 
+#ifdef PRIORITY
 task_t *scheduler () {
     task_t *next = task_queue, *temp;
 
@@ -46,8 +50,9 @@ task_t *scheduler () {
         if (temp == task_queue && size > 0) {
             break;
         }
-        if (temp->dynamic_prio < next->dynamic_prio) {
-            if (temp->tid < next->tid) {
+        if (temp->dynamic_prio <= next->dynamic_prio) {
+            if ((temp->dynamic_prio == next->dynamic_prio && temp->tid < next->tid)
+                    || temp->dynamic_prio < next->dynamic_prio) {
                 // Atualiza a tarefa que seria escolhida até então,
                 // quando as tarefas tem a mesma prioridade, a com menor ID ganha
                 next->dynamic_prio += alfa_aging;
@@ -63,9 +68,18 @@ task_t *scheduler () {
     queue_remove((queue_t **) &task_queue, (queue_t *) next);
     queue_append((queue_t **) &task_queue, (queue_t *) next);
     next->dynamic_prio = next->prio;
+    return next;
+}
+#else
+task_t *scheduler () {
+    task_t *next = task_queue;
+
+    queue_remove((queue_t **) &task_queue, (queue_t *) next);
+    queue_append((queue_t **) &task_queue, (queue_t *) next);
 
     return next;
 }
+#endif
 
 void dispatcher_body () {
     int user_tasks = queue_size((queue_t *) task_queue);
@@ -157,6 +171,8 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
     /* Inicializa os outros atributos */
     task->prio = 0;
     task->dynamic_prio = 0;
+    task->activations = 0;
+    task->cpu_time = 0;
     task->system_task = 0; // tarefas de usuário são sempre zero
     task->exitCode = -1;
 
@@ -173,6 +189,10 @@ void task_exit (int exitCode) {
     if (0 == exitCode && 0 == current_task->system_task) {
         // Se a tarefa saiu com código 0, podemos remover da lista
         queue_remove((queue_t **) &task_queue, (queue_t *) current_task);
+        printf("Task %d exit: running time %u ms, cpu time  %u ms, %u activations\n",
+                current_task->tid, systime(),
+                current_task->cpu_time, current_task->activations
+                );
         task_yield();
     }
     // Se não foi uma tarefa de usuário, volta pra main
@@ -187,6 +207,8 @@ int task_switch (task_t *task) {
     // Se for uma tarefa de usuário, inicio ela com o quantum padrão
     if (task->system_task == 0) {
         task->quantum = QUANTUM;
+        task->last_called_time = systime();
+        task->activations++;
     }
 
     current_task = task;
@@ -225,8 +247,5 @@ int task_getprio (task_t *task) {
 }
 
 unsigned int systime () {
-    gettimeofday(&tv, NULL);
-    unsigned int current_time = (tv.tv_sec * 1000) + (tv.tv_usec) / 1000;
-
-    return current_time;
+    return clock;
 }

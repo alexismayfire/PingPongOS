@@ -19,6 +19,9 @@ typedef struct task_t
   int dynamic_prio;
   int quantum;
   int status;
+  unsigned int cpu_time;
+  unsigned int last_called_time;
+  unsigned int activations;
   int system_task;
   int exitCode;
 } task_t ;

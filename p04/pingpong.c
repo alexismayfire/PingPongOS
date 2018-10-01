@@ -24,7 +24,8 @@ task_t *scheduler () {
             break;
         }
         if (temp->dynamic_prio <= next->dynamic_prio) {
-            if (temp->tid < next->tid) {
+            if ((temp->dynamic_prio == next->dynamic_prio && temp->tid < next->tid)
+                || temp->dynamic_prio < next->dynamic_prio) {
                 // Atualiza a tarefa que seria escolhida até então
                 next->dynamic_prio += alfa_aging;
                 next = temp;

@@ -20,4 +20,4 @@ proj05 :
 proj06-1 : 
 	gcc -Wall -o proj06-1 p06/pingpong-contab.c p06/pingpong.c p00/queue.c
 proj06-2 :
-	gcc -Wall -o proj06-2 p06/pingpong-contab-prio.c p06/pingpong.c p00/queue.c
+	gcc -Wall -o proj06-2 p06/pingpong-contab-prio.c p06/pingpong.c p00/queue.c -DPRIORITY

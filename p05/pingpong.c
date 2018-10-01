@@ -45,8 +45,9 @@ task_t *scheduler () {
         if (temp == task_queue && size > 0) {
             break;
         }
-        if (temp->dynamic_prio < next->dynamic_prio) {
-            if (temp->tid < next->tid) {
+        if (temp->dynamic_prio <= next->dynamic_prio) {
+            if ((temp->dynamic_prio == next->dynamic_prio && temp->tid < next->tid)
+                || temp->dynamic_prio < next->dynamic_prio) {
                 // Atualiza a tarefa que seria escolhida até então,
                 // quando as tarefas tem a mesma prioridade, a com menor ID ganha
                 next->dynamic_prio += alfa_aging;

@@ -105,31 +105,18 @@ void dispatcher_body () {
     task_exit(0);
 }
 
+void Body (void * arg);
+
 void pingpong_init () {
     setvbuf(stdout, 0, _IONBF, 0);
     last_task_id = 0;
 
     /* Dispatcher e lista de tarefas */
     dispatcher = (task_t *)malloc(sizeof(task_t));
-    task_create(dispatcher, dispatcher_body, 0);
+    //task_create(dispatcher, dispatcher_body, 0);
     dispatcher->system_task = 1;
     task_queue = NULL;
     ready_tasks = NULL;
-
-    /* Inicializa a main */
-    getcontext(&ContextMain);
-    char *stack = malloc (STACKSIZE);
-    if (stack)
-    {
-        ContextMain.uc_stack.ss_sp = stack;
-        ContextMain.uc_stack.ss_size = STACKSIZE;
-        ContextMain.uc_stack.ss_flags = 0;
-        ContextMain.uc_link = 0;
-    }
-
-    current_task = (task_t *)malloc(sizeof(task_t));
-    current_task->context = ContextMain;
-    main_task = current_task;
 
     /* Inicializa o temporizador */
     action.sa_handler = signal_handler;
@@ -148,12 +135,28 @@ void pingpong_init () {
         perror("Erro em setitimer: ");
         exit(1);
     }
+
+    /* Inicializa a main */
+    getcontext(&ContextMain);
+    char *stack = malloc (STACKSIZE);
+    if (stack)
+    {
+        ContextMain.uc_stack.ss_sp = stack;
+        ContextMain.uc_stack.ss_size = STACKSIZE;
+        ContextMain.uc_stack.ss_flags = 0;
+        ContextMain.uc_link = 0;
+    }
+
+    current_task = (task_t *)malloc(sizeof(task_t));
+    current_task->context = ContextMain;
+    task_create(current_task, (void *)task_create, (void *)(dispatcher, task_yield, NULL));
+    main_task = current_task;
 }
 
 // Cria uma nova tarefa. Retorna um ID> 0 ou erro.
 int task_create (task_t *task, void (*start_func)(void *), void *arg) {
-    last_task_id++;
     task->tid = last_task_id;
+    last_task_id++;
 
     /* Inicializa um novo contexto para a tarefa */
     ucontext_t context;

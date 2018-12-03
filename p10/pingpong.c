@@ -128,21 +128,36 @@ void dispatcher_body () {
 void pingpong_init () {
     setvbuf(stdout, 0, _IONBF, 0);
 
+    getcontext(&ContextMain);
+    char *stack = malloc (STACKSIZE);
+    if (stack)
+    {
+        ContextMain.uc_stack.ss_sp = stack;
+        ContextMain.uc_stack.ss_size = STACKSIZE;
+        ContextMain.uc_stack.ss_flags = 0;
+        ContextMain.uc_link = 0;
+    }
+
+    current_task = (task_t *)malloc(sizeof(task_t));
+    current_task->context = ContextMain;
+    current_task->tid = 0;
+    main_task = current_task;
+
     /* Dispatcher e lista de tarefas */
     dispatcher = (task_t *)malloc(sizeof(task_t));
-    task_create(dispatcher, dispatcher_body, 0);
+    task_create(dispatcher, dispatcher_body, NULL);
     dispatcher->system_task = 1;
     dispatcher->tid = 1;
     ready_queue = NULL;
-    suspended_queue = NULL;
-    sleeping_queue = NULL;
 
     last_task_id = 0;
 
     /* Inicializa a main */
+    /*
     current_task = (task_t *)malloc(sizeof(task_t));
-    task_create(current_task, task_yield, 0);
+    task_create(current_task, task_yield, NULL);
     main_task = current_task;
+     */
 
     last_task_id = 2;
 
@@ -157,14 +172,16 @@ void pingpong_init () {
     }
 
     timer.it_value.tv_usec = 1000; // primeiro disparo, em micro-segundos
+    timer.it_value.tv_sec = 0;
     timer.it_interval.tv_usec = 1000; // disparos subsequentes, em micro-segundos
+    timer.it_interval.tv_sec = 0;
 
     if (setitimer(ITIMER_REAL, &timer, 0) < 0) {
         perror("Erro em setitimer: ");
         exit(1);
     }
 
-    task_yield();
+    //task_yield();
 }
 
 // Cria uma nova tarefa. Retorna um ID> 0 ou erro.
@@ -257,10 +274,10 @@ int task_switch (task_t *task) {
     if (temp->system_task == 1) {
         temp->cpu_time += (systime() - temp->last_called_time);
     }
-
-    //printf("task_switch: mudou a tarefa %d para a tarefa %d\n", temp->tid, task->tid);
-    //printf("Próxima: tarefa %d\n", ready_queue->tid);
-
+    /*
+    printf("task_switch: mudou a tarefa %d para a tarefa %d\n", temp->tid, task->tid);
+    printf("Próxima: tarefa %d\n", ready_queue->tid);
+    */
     current_task = task;
     swapcontext(&(temp->context), &(current_task->context));
 
@@ -375,14 +392,12 @@ int sem_up (semaphore_t *s) {
 
 // destroi o semáforo, liberando as tarefas bloqueadas
 int sem_destroy (semaphore_t *s) {
-    task_t *first = (task_t *)s->semaphore_queue;
+    task_t *temp;
 
-    if (first != NULL) {
-        task_t *temp = first;
-        while (temp != NULL) {
-            sem_up (s);
-            temp = temp->next;
-        }
+    while((s->semaphore_queue) != NULL) {
+        temp = s->semaphore_queue;
+        queue_remove((queue_t **) &s->semaphore_queue, (queue_t *) temp);
+        queue_append((queue_t **) &ready_queue, (queue_t *) temp);
     }
 }
 

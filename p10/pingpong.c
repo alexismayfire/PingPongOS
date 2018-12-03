@@ -35,12 +35,15 @@ void signal_handler () {
     // Se for tarefa de sistema, não faz nada!
     if (current_task->system_task == 0) {
         // Se a tarefa ainda tem quantum, só decrementa; se zerou, volta pro dispatcher
-        current_task->quantum--;
-        if (current_task->quantum == 0) {
-            // Incrementa o CPU time quando a tarefa recebe o processador
+        if (current_task->semaphore == 'f') {
+            current_task->quantum--;
             current_task->cpu_time += (systime() - current_task->last_called_time);
-            dispatcher->last_called_time = systime();
-            task_yield();
+            if (current_task->quantum == 0) {
+                // Incrementa o CPU time quando a tarefa recebe o processador
+                //current_task->cpu_time += (systime() - current_task->last_called_time);
+                dispatcher->last_called_time = systime();
+                task_yield();
+            }
         }
     }
 }
@@ -83,7 +86,7 @@ task_t *scheduler () {
 task_t *scheduler () {
     task_t *next = ready_queue;
 
-    if (next) {
+    if (next != NULL) {
         queue_remove((queue_t **) &ready_queue, (queue_t *) next);
         queue_append((queue_t **) &ready_queue, (queue_t *) next);
     }
@@ -98,7 +101,7 @@ void dispatcher_body () {
     while (user_tasks > 0) {
         task_t *next = scheduler ();
 
-        if (next) {
+        if (next != NULL) {
             task_switch(next);
         }
         user_tasks = queue_size((queue_t *) ready_queue) + queue_size((queue_t *) suspended_queue) + queue_size((queue_t *) sleeping_queue);
@@ -110,8 +113,9 @@ void dispatcher_body () {
             // Aqui poderia usar task_resume, mas implicaria ter apenas uma fila (para suspensas e adormecidas).
             // Também seria possível, mas no if abaixo precisa adicionar uma cláusula para verificar se check->sleep > 0
             // E aí basta trocar o sleeping_queue != NULL por suspended_queue != NULL no if externo
-            if (check->sleep < systime()) {
+            if (check->sleep > systime()) {
                 queue_append((queue_t **) &ready_queue, (queue_t *) check);
+                //task_yield();
             } else {
                 queue_append((queue_t **) &sleeping_queue, (queue_t *) check);
             }
@@ -194,10 +198,13 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
     task->activations = 0;
     task->cpu_time = 0;
     task->system_task = 0; // tarefas de usuário são sempre zero
+    task->semaphore = 'f';
     task->status = 'r'; // a priori, todas as tasks tem o estado 'ready'
     task->exitCode = -1;
 
     queue_append((queue_t **) &ready_queue, (queue_t *) task);
+
+    //printf("task_create: criou tarefa %d\n", task->tid);
 
     return task->tid;
 }
@@ -251,6 +258,9 @@ int task_switch (task_t *task) {
         temp->cpu_time += (systime() - temp->last_called_time);
     }
 
+    //printf("task_switch: mudou a tarefa %d para a tarefa %d\n", temp->tid, task->tid);
+    //printf("Próxima: tarefa %d\n", ready_queue->tid);
+
     current_task = task;
     swapcontext(&(temp->context), &(current_task->context));
 
@@ -264,6 +274,12 @@ int task_id () {
 
 void task_yield () {
     dispatcher->activations++;
+    /*
+    if (current_task != dispatcher) {
+        printf("task_yield: a tarefa %d pediu yield\n", current_task->tid);
+        printf("Próxima: tarefa %d\n", ready_queue->tid);
+    }
+    */
     task_switch(dispatcher);
 }
 
@@ -284,9 +300,9 @@ void task_suspend (task_t *task, task_t **queue) {
         task = current_task;
     }
     task->status = 's';
-    task_t *suspend = (task_t *)queue_remove((queue_t **) &ready_queue, (queue_t *) task);
+    queue_remove((queue_t **) &ready_queue, (queue_t *) task);
     // Para manter o controle de tarefas aguardando, a função deve ser chamada com suspended_queue ou sleeping_queue
-    queue_append((queue_t **) queue, (queue_t *) suspend);
+    queue_append((queue_t **) queue, (queue_t *) current_task);
 
     task_yield();
 }
@@ -300,7 +316,11 @@ void task_resume (task_t *task) {
 
 void task_sleep (int t) {
     current_task->sleep = systime() + (t * 1000);
-    task_suspend(NULL, &sleeping_queue);
+    /*
+    printf("task_sleep: tarefa %d\n", current_task->tid);
+    printf("Próxima: tarefa %d\n", ready_queue->tid);
+    */
+     task_suspend(NULL, &sleeping_queue);
 }
 
 // cria um semáforo com valor inicial "value"
@@ -314,32 +334,41 @@ int sem_create (semaphore_t *s, int value) {
 // requisita o semáforo
 int sem_down (semaphore_t *s) {
     // Emulando modo núcleo
-    current_task->system_task = 1;
+    current_task->semaphore = 't';
 
     s->counter--;
     if (s->counter < 0) {
+        //printf("sem_down: tarefa %d parada\n", current_task->tid);
+        current_task->status = 's';
+        queue_remove((queue_t **) &ready_queue, (queue_t *) current_task);
+        // Para manter o controle de tarefas aguardando, a função deve ser chamada com suspended_queue ou sleeping_queue
+        //queue_append((queue_t **) &suspended_queue, (queue_t *) current_task);
         queue_append((queue_t **) &s->semaphore_queue, (queue_t *) current_task);
-        task_suspend(NULL, &suspended_queue);
-        current_task->system_task = 0;
+        current_task->semaphore = 'f';
+        task_yield();
     }
 
-    current_task->system_task = 0;
+    current_task->semaphore = 'f';
 
     return 0;
 }
 
 // libera o semáforo
 int sem_up (semaphore_t *s) {
-    current_task->system_task = 1;
+    current_task->semaphore = 't';
 
     s->counter++;
-    if (s->counter <= 0 && s->semaphore_queue != NULL) {
-        task_t *first = (task_t *) s->semaphore_queue;
-        task_t *task_released = (task_t *)queue_remove((queue_t **) &s->semaphore_queue, (queue_t *) first);
-        task_resume(task_released);
+    if (s->semaphore_queue != NULL) {
+        task_t *first = s->semaphore_queue;
+        (task_t *) queue_remove((queue_t **) &s->semaphore_queue, (queue_t *) first);
+        first->status = 'r';
+        queue_append((queue_t **) &ready_queue, (queue_t *) first);
+        current_task->semaphore = 'f';
+        task_yield();
     }
+    //task_resume(task_released);
 
-    current_task->system_task = 0;
+    current_task->semaphore = 'f';
 
     return 0;
 }

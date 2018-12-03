@@ -19,6 +19,7 @@ typedef struct task_t
   int prio;
   int dynamic_prio;
   int quantum;
+  char semaphore;
   char status;
   unsigned int sleep;
   unsigned int cpu_time;
@@ -32,13 +33,17 @@ typedef struct task_t
 typedef struct
 {
   struct task_t *semaphore_queue;
+  struct task_t *current_task;
+  struct mutex_t *lock;
   int counter;
 } semaphore_t ;
 
 // estrutura que define um mutex
 typedef struct
 {
-  // preencher quando necessário
+  struct task_t *owner;
+  int lock;
+  struct semaphore_t *semaphore;
 } mutex_t ;
 
 // estrutura que define uma barreira

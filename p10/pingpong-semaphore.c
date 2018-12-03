@@ -12,7 +12,7 @@ void TaskA (void * arg)
    {
       sem_down (&s1) ;
       printf ("%s zig (%d)\n", (char *) arg, i) ;
-      task_sleep (1) ;
+         task_sleep (1) ;
       sem_up (&s2) ;
    }
    task_exit (0) ;

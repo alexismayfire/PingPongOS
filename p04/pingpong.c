@@ -12,15 +12,15 @@
 #endif
 
 ucontext_t ContextMain;
-task_t *current_task, *main_task, *dispatcher, *task_queue, *ready_tasks;
+task_t *current_task, *main_task, *dispatcher, *ready_queue, *ready_tasks;
 int last_task_id, alfa_aging = -1;
 
 task_t *scheduler () {
-    task_t *next = task_queue, *temp;
+    task_t *next = ready_queue, *temp;
     int size = 0;
-    for (temp = task_queue; temp != NULL; temp = temp->next) {
+    for (temp = ready_queue; temp != NULL; temp = temp->next) {
         // Foi necessário um if com break, porque se colocar na cláusula de parada do for não dá certo
-        if (temp == task_queue && size > 0) {
+        if (temp == ready_queue && size > 0) {
             break;
         }
         if (temp->dynamic_prio <= next->dynamic_prio) {
@@ -36,23 +36,23 @@ task_t *scheduler () {
         size++;
     }
 
-    queue_remove((queue_t **) &task_queue, (queue_t *) next);
+    queue_remove((queue_t **) &ready_queue, (queue_t *) next);
     next->dynamic_prio = next->prio;
 
     return next;
 }
 
 void dispatcher_body () {
-    int user_tasks = queue_size((queue_t *) task_queue);
+    int user_tasks = queue_size((queue_t *) ready_queue);
 
     while (user_tasks > 0) {
         task_t *next = scheduler ();
         if (next) {
             // Se uma tarefa for removida, vamos colocar ela no final da fila
-            queue_append((queue_t **) &task_queue, (queue_t *) next);
+            queue_append((queue_t **) &ready_queue, (queue_t *) next);
             task_switch(next);
         }
-        user_tasks = queue_size((queue_t *) task_queue);
+        user_tasks = queue_size((queue_t *) ready_queue);
     }
 
     task_exit(0);
@@ -64,7 +64,7 @@ void pingpong_init () {
 
     dispatcher = (task_t *)malloc(sizeof(task_t));
     task_create(dispatcher, dispatcher_body, 0);
-    task_queue = NULL;
+    ready_queue = NULL;
     ready_tasks = NULL;
 
     getcontext(&ContextMain);
@@ -111,7 +111,7 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
     task->dynamic_prio = task->prio;
     task->exitCode = -1;
 
-    queue_append((queue_t **) &task_queue, (queue_t *) task);
+    queue_append((queue_t **) &ready_queue, (queue_t *) task);
 
     return task->tid;
 }
@@ -128,7 +128,7 @@ void task_exit (int exitCode) {
     * Precisa pensar em outra maneira mais coerente
     */
    if (0 == exitCode && current_task->tid > 1) {
-       queue_remove((queue_t **) &task_queue, (queue_t *) current_task);
+       queue_remove((queue_t **) &ready_queue, (queue_t *) current_task);
        task_yield();
    }
 
@@ -150,7 +150,7 @@ int task_switch (task_t *task) {
     // Vamos testar se a tarefa encerrou para remover da fila
     /*
     if (current_task->exitCode == 0) {
-        queue_remove((queue_t **) task_queue, (queue_t *) current_task);
+        queue_remove((queue_t **) ready_queue, (queue_t *) current_task);
     }
      */
     current_task = task;

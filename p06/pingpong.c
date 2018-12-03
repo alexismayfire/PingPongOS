@@ -22,7 +22,7 @@
 #define QUANTUM 20;
 
 ucontext_t ContextMain;
-task_t *current_task, *main_task, *dispatcher, *task_queue, *ready_tasks;
+task_t *current_task, *main_task, *dispatcher, *ready_queue, *ready_tasks;
 int last_task_id, alfa_aging = -1;
 unsigned int clock = 0;
 
@@ -45,16 +45,16 @@ void signal_handler () {
 
 #ifdef PRIORITY
 task_t *scheduler () {
-    task_t *next = task_queue, *temp;
+    task_t *next = ready_queue, *temp;
 
     // Se remover o laço abaixo e apenas ir removendo da lista, o resultado sempre é o esperado
     // Porém, quando o laço é usado, podem ter algumas distorções no resultado
     // Mesmo usando um DEFINE DEBUG e usando um condicional aqui para pular não adianta, precisa comentar (?)
 
     int size = 0;
-    for (temp = task_queue; temp != NULL; temp = temp->next) {
+    for (temp = ready_queue; temp != NULL; temp = temp->next) {
         // Foi necessário um if com break, porque se colocar na cláusula de parada do for não dá certo
-        if (temp == task_queue && size > 0) {
+        if (temp == ready_queue && size > 0) {
             break;
         }
         if (temp->dynamic_prio <= next->dynamic_prio) {
@@ -72,34 +72,34 @@ task_t *scheduler () {
         size++;
     }
 
-    queue_remove((queue_t **) &task_queue, (queue_t *) next);
-    queue_append((queue_t **) &task_queue, (queue_t *) next);
+    queue_remove((queue_t **) &ready_queue, (queue_t *) next);
+    queue_append((queue_t **) &ready_queue, (queue_t *) next);
     next->dynamic_prio = next->prio;
     return next;
 }
 #else
 task_t *scheduler () {
-    task_t *next = task_queue;
+    task_t *next = ready_queue;
 
-    queue_remove((queue_t **) &task_queue, (queue_t *) next);
-    queue_append((queue_t **) &task_queue, (queue_t *) next);
+    queue_remove((queue_t **) &ready_queue, (queue_t *) next);
+    queue_append((queue_t **) &ready_queue, (queue_t *) next);
 
     return next;
 }
 #endif
 
 void dispatcher_body () {
-    int user_tasks = queue_size((queue_t *) task_queue);
+    int user_tasks = queue_size((queue_t *) ready_queue);
 
     while (user_tasks > 0) {
         task_t *next = scheduler ();
 
         if (next) {
             // Se uma tarefa for removida, vamos colocar ela no final da fila
-            //queue_append((queue_t **) &task_queue, (queue_t *) next);
+            //queue_append((queue_t **) &ready_queue, (queue_t *) next);
             task_switch(next);
         }
-        user_tasks = queue_size((queue_t *) task_queue);
+        user_tasks = queue_size((queue_t *) ready_queue);
     }
 
     task_exit(0);
@@ -113,7 +113,7 @@ void pingpong_init () {
     dispatcher = (task_t *)malloc(sizeof(task_t));
     task_create(dispatcher, dispatcher_body, 0);
     dispatcher->system_task = 1;
-    task_queue = NULL;
+    ready_queue = NULL;
     ready_tasks = NULL;
 
     /* Inicializa a main */
@@ -183,7 +183,7 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
     task->system_task = 0; // tarefas de usuário são sempre zero
     task->exitCode = -1;
 
-    queue_append((queue_t **) &task_queue, (queue_t *) task);
+    queue_append((queue_t **) &ready_queue, (queue_t *) task);
 
     return task->tid;
 }
@@ -196,7 +196,7 @@ void task_exit (int exitCode) {
     if (0 == exitCode) { //&& 0 == current_task->system_task) {
         // Se a tarefa saiu com código 0, podemos remover da lista
         if (0 == current_task->system_task) {
-            queue_remove((queue_t **) &task_queue, (queue_t *) current_task);
+            queue_remove((queue_t **) &ready_queue, (queue_t *) current_task);
         }
         printf("Task %d exit: running time %u ms, cpu time  %u ms, %u activations\n",
                 current_task->tid, systime(),

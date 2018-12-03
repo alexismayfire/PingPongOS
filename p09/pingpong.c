@@ -22,7 +22,7 @@
 #define QUANTUM 20;
 
 ucontext_t ContextMain;
-task_t *current_task, *main_task, *dispatcher, *ready_queue, *ready_tasks;
+task_t *current_task, *main_task, *dispatcher, *ready_queue, *suspended_queue, *sleeping_queue;
 int last_task_id, alfa_aging = -1;
 unsigned int clock = 0;
 
@@ -31,6 +31,7 @@ struct itimerval timer;
 
 void signal_handler () {
     clock++;
+
     // Se for tarefa de sistema, não faz nada!
     if (current_task->system_task == 0) {
         // Se a tarefa ainda tem quantum, só decrementa; se zerou, volta pro dispatcher
@@ -82,25 +83,39 @@ task_t *scheduler () {
 task_t *scheduler () {
     task_t *next = ready_queue;
 
-    queue_remove((queue_t **) &ready_queue, (queue_t *) next);
-    queue_append((queue_t **) &ready_queue, (queue_t *) next);
+    if (next) {
+        queue_remove((queue_t **) &ready_queue, (queue_t *) next);
+        queue_append((queue_t **) &ready_queue, (queue_t *) next);
+    }
 
     return next;
 }
 #endif
 
 void dispatcher_body () {
-    int user_tasks = queue_size((queue_t *) ready_queue);
+    int user_tasks = queue_size((queue_t *) ready_queue) + queue_size((queue_t *) suspended_queue) + queue_size((queue_t *) sleeping_queue);
 
     while (user_tasks > 0) {
         task_t *next = scheduler ();
 
         if (next) {
-            // Se uma tarefa for removida, vamos colocar ela no final da fila
-            //queue_append((queue_t **) &ready_queue, (queue_t *) next);
             task_switch(next);
         }
-        user_tasks = queue_size((queue_t *) ready_queue);
+        user_tasks = queue_size((queue_t *) ready_queue) + queue_size((queue_t *) suspended_queue) + queue_size((queue_t *) sleeping_queue);
+
+        if (sleeping_queue != NULL)
+        {
+            // Se a fila de tarefas adormecidas existe, checamos apenas uma por posse do processador do escalonador
+            task_t *check = (task_t *)queue_remove((queue_t **) &sleeping_queue, (queue_t *) sleeping_queue);
+            // Aqui poderia usar task_resume, mas implicaria ter apenas uma fila (para suspensas e adormecidas).
+            // Também seria possível, mas no if abaixo precisa adicionar uma cláusula para verificar se check->sleep > 0
+            // E aí basta trocar o sleeping_queue != NULL por suspended_queue != NULL no if externo
+            if (check->sleep < systime()) {
+                queue_append((queue_t **) &ready_queue, (queue_t *) check);
+            } else {
+                queue_append((queue_t **) &sleeping_queue, (queue_t *) check);
+            }
+        }
     }
 
     task_exit(0);
@@ -115,7 +130,8 @@ void pingpong_init () {
     dispatcher->system_task = 1;
     dispatcher->tid = 1;
     ready_queue = NULL;
-    ready_tasks = NULL;
+    suspended_queue = NULL;
+    sleeping_queue = NULL;
 
     last_task_id = 0;
 
@@ -178,6 +194,7 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
     task->activations = 0;
     task->cpu_time = 0;
     task->system_task = 0; // tarefas de usuário são sempre zero
+    task->status = 'r'; // a priori, todas as tasks tem o estado 'ready'
     task->exitCode = -1;
 
     queue_append((queue_t **) &ready_queue, (queue_t *) task);
@@ -189,18 +206,31 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
 void task_exit (int exitCode) {
     current_task->exitCode = exitCode;
 
-    // Agora verifico se é uma tarefa de sistema
-    if (0 == exitCode) { //&& 0 == current_task->system_task) {
-        // Se a tarefa saiu com código 0, podemos remover da lista
-        if (0 == current_task->system_task) {
-            queue_remove((queue_t **) &ready_queue, (queue_t *) current_task);
+    printf("Task %d exit: running time %u ms, cpu time  %u ms, %u activations\n",
+           current_task->tid, systime(),
+           current_task->cpu_time, current_task->activations
+    );
+
+    // Se a tarefa saiu com código 0, podemos remover da lista
+    if (0 == current_task->system_task) {
+        queue_remove((queue_t **) &ready_queue, (queue_t *) current_task);
+
+        task_t *temp, *suspended = suspended_queue;
+        int size = 0;
+        for (temp = suspended_queue; temp != NULL; temp = temp->next) {
+            if (temp == suspended && size > 0) {
+                break;
+            }
+
+            if (temp->await == current_task) {
+                task_resume(temp);
+                task_yield();
+            }
+            size++;
         }
-        printf("Task %d exit: running time %u ms, cpu time  %u ms, %u activations\n",
-                current_task->tid, systime(),
-                current_task->cpu_time, current_task->activations
-                );
         task_yield();
     }
+
     // Se não foi uma tarefa de usuário, volta pra main
     task_switch(main_task);
 }
@@ -235,6 +265,42 @@ int task_id () {
 void task_yield () {
     dispatcher->activations++;
     task_switch(dispatcher);
+}
+
+int task_join (task_t *task) {
+    if (task == NULL || task->exitCode > -1) {
+        // Se a tarefa não existir ou já tiver sido encerrada, retorna imediatamente
+        return -1;
+    }
+
+    current_task->await = task;
+    task_suspend(NULL, &suspended_queue);
+
+    return task->exitCode;
+}
+
+void task_suspend (task_t *task, task_t **queue) {
+    if (task == NULL) {
+        task = current_task;
+    }
+    task->status = 's';
+    queue_remove((queue_t **) &ready_queue, (queue_t *) task);
+    // Para manter o controle de tarefas aguardando, a função deve ser chamada com suspended_queue ou sleeping_queue
+    queue_append((queue_t **) queue, (queue_t *) task);
+
+    task_yield();
+}
+
+void task_resume (task_t *task) {
+    // Para manter o controle de tarefas aguardando
+    queue_remove((queue_t **) &suspended_queue, (queue_t *) task);
+    task->status = 'r';
+    queue_append((queue_t **) &ready_queue, (queue_t *) task);
+}
+
+void task_sleep (int t) {
+    current_task->sleep = systime() + (t * 1000);
+    task_suspend(NULL, &sleeping_queue);
 }
 
 void task_setprio (task_t *task, int prio) {

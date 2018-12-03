@@ -221,8 +221,6 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
 
     queue_append((queue_t **) &ready_queue, (queue_t *) task);
 
-    //printf("task_create: criou tarefa %d\n", task->tid);
-
     return task->tid;
 }
 
@@ -274,10 +272,6 @@ int task_switch (task_t *task) {
     if (temp->system_task == 1) {
         temp->cpu_time += (systime() - temp->last_called_time);
     }
-    /*
-    printf("task_switch: mudou a tarefa %d para a tarefa %d\n", temp->tid, task->tid);
-    printf("Próxima: tarefa %d\n", ready_queue->tid);
-    */
     current_task = task;
     swapcontext(&(temp->context), &(current_task->context));
 
@@ -291,12 +285,6 @@ int task_id () {
 
 void task_yield () {
     dispatcher->activations++;
-    /*
-    if (current_task != dispatcher) {
-        printf("task_yield: a tarefa %d pediu yield\n", current_task->tid);
-        printf("Próxima: tarefa %d\n", ready_queue->tid);
-    }
-    */
     task_switch(dispatcher);
 }
 
@@ -333,11 +321,7 @@ void task_resume (task_t *task) {
 
 void task_sleep (int t) {
     current_task->sleep = systime() + (t * 1000);
-    /*
-    printf("task_sleep: tarefa %d\n", current_task->tid);
-    printf("Próxima: tarefa %d\n", ready_queue->tid);
-    */
-     task_suspend(NULL, &sleeping_queue);
+    task_suspend(NULL, &sleeping_queue);
 }
 
 // cria um semáforo com valor inicial "value"
@@ -444,7 +428,6 @@ int barrier_join (barrier_t *b) {
         }
     }
     b->tasks = 0;
-    sem_destroy(&b->semaphore);
     //sem_up(&b->semaphore);
 
     return 0;

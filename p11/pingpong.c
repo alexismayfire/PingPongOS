@@ -35,15 +35,16 @@ void signal_handler () {
     // Se for tarefa de sistema, não faz nada!
     if (current_task->system_task == 0) {
         // Se a tarefa ainda tem quantum, só decrementa; se zerou, volta pro dispatcher
-//        if (current_task->semaphore == 'f') {
+        if (current_task->semaphore == 'f') {
             current_task->quantum--;
+            //current_task->cpu_time += (systime() - current_task->last_called_time);
             if (current_task->quantum == 0) {
                 // Incrementa o CPU time quando a tarefa recebe o processador
                 current_task->cpu_time += (systime() - current_task->last_called_time);
                 dispatcher->last_called_time = systime();
                 task_yield();
             }
-//        }
+        }
     }
 }
 
@@ -85,7 +86,7 @@ task_t *scheduler () {
 task_t *scheduler () {
     task_t *next = ready_queue;
 
-    if (next) {
+    if (next != NULL) {
         queue_remove((queue_t **) &ready_queue, (queue_t *) next);
         queue_append((queue_t **) &ready_queue, (queue_t *) next);
     }
@@ -229,13 +230,13 @@ int task_create (task_t *task, void (*start_func)(void *), void *arg) {
 void task_exit (int exitCode) {
     current_task->exitCode = exitCode;
 
-    printf("Task %d exit: running time %u ms, cpu time  %u ms, %u activations\n",
-           current_task->tid, systime(),
-           current_task->cpu_time, current_task->activations
-    );
-
     // Se a tarefa saiu com código 0, podemos remover da lista
     if (0 == current_task->system_task) {
+        printf("Task %d exit: running time %u ms, cpu time  %u ms, %u activations\n",
+               current_task->tid, systime(),
+               current_task->cpu_time, current_task->activations
+        );
+
         queue_remove((queue_t **) &ready_queue, (queue_t *) current_task);
 
         task_t *temp, *suspended = suspended_queue;
@@ -350,7 +351,7 @@ int sem_create (semaphore_t *s, int value) {
 // requisita o semáforo
 int sem_down (semaphore_t *s) {
     // Emulando modo núcleo
-//    current_task->semaphore = 't';
+    current_task->semaphore = 't';
 
     s->counter--;
     if (s->counter < 0) {
@@ -360,11 +361,11 @@ int sem_down (semaphore_t *s) {
         // Para manter o controle de tarefas aguardando, a função deve ser chamada com suspended_queue ou sleeping_queue
         //queue_append((queue_t **) &suspended_queue, (queue_t *) current_task);
         queue_append((queue_t **) &s->semaphore_queue, (queue_t *) current_task);
-//        current_task->semaphore = 'f';
+        current_task->semaphore = 'f';
         task_yield();
     }
 
-//    current_task->semaphore = 'f';
+    current_task->semaphore = 'f';
 
     return 0;
 }
@@ -376,15 +377,15 @@ int sem_up (semaphore_t *s) {
     s->counter++;
     if (s->semaphore_queue != NULL) {
         task_t *first = s->semaphore_queue;
-        (task_t *) queue_remove((queue_t **) &s->semaphore_queue, (queue_t *) first);
+        queue_remove((queue_t **) &s->semaphore_queue, (queue_t *) first);
         first->status = 'r';
         queue_append((queue_t **) &ready_queue, (queue_t *) first);
-//        current_task->semaphore = 'f';
+        current_task->semaphore = 'f';
         task_yield();
     }
     //task_resume(task_released);
 
-//    current_task->semaphore = 'f';
+    current_task->semaphore = 'f';
 
     return 0;
 }
@@ -398,6 +399,60 @@ int sem_destroy (semaphore_t *s) {
         queue_remove((queue_t **) &s->semaphore_queue, (queue_t *) temp);
         queue_append((queue_t **) &ready_queue, (queue_t *) temp);
     }
+}
+
+// Inicializa uma barreira
+int barrier_create (barrier_t *b, int N) {
+    b->size = N;
+    b->tasks = 0;
+    b->await = NULL;
+    sem_create(&b->semaphore, 1);
+
+    if (b->size == N) {
+        return 0;
+    }
+
+    return -1;
+}
+
+// Chega a uma barreira
+int barrier_join (barrier_t *b) {
+    if (b == NULL) {
+        // Faz sentido??
+        return -1;
+    }
+
+    sem_down(&b->semaphore);
+    b->tasks++;
+
+    if (b->tasks < b->size) {
+        current_task->status = 's';
+        queue_remove((queue_t **) &ready_queue, (queue_t *) current_task);
+        queue_append((queue_t **) &b->await, (queue_t *) current_task);
+        //sem_up(&b->semaphore);
+        task_yield();
+    }
+    sem_up(&b->semaphore);
+
+    task_t *temp = b->await, *remove;
+    while (temp != NULL) {
+        remove = temp->next;
+        if (remove != NULL) {
+            queue_remove((queue_t **) &b->await, (queue_t *) remove);
+            queue_append((queue_t **) &ready_queue, (queue_t *) remove);
+            temp = remove->next;
+        }
+    }
+    b->tasks = 0;
+    //sem_up(&b->semaphore);
+
+    return 0;
+}
+
+// Destrói uma barreira
+int barrier_destroy (barrier_t *b) {
+
+    return 0;
 }
 
 void task_setprio (task_t *task, int prio) {

@@ -38,6 +38,7 @@ void signal_handler () {
         if (current_task->quantum == 0) {
             // Incrementa o CPU time quando a tarefa recebe o processador
             current_task->cpu_time += (systime() - current_task->last_called_time);
+            dispatcher->last_called_time = systime();
             task_yield();
         }
     }
@@ -105,18 +106,25 @@ void dispatcher_body () {
     task_exit(0);
 }
 
-void Body (void * arg);
-
 void pingpong_init () {
     setvbuf(stdout, 0, _IONBF, 0);
-    last_task_id = 0;
 
     /* Dispatcher e lista de tarefas */
     dispatcher = (task_t *)malloc(sizeof(task_t));
-    //task_create(dispatcher, dispatcher_body, 0);
+    task_create(dispatcher, dispatcher_body, 0);
     dispatcher->system_task = 1;
+    dispatcher->tid = 1;
     task_queue = NULL;
     ready_tasks = NULL;
+
+    last_task_id = 0;
+
+    /* Inicializa a main */
+    current_task = (task_t *)malloc(sizeof(task_t));
+    task_create(current_task, task_yield, 0);
+    main_task = current_task;
+
+    last_task_id = 2;
 
     /* Inicializa o temporizador */
     action.sa_handler = signal_handler;
@@ -136,21 +144,7 @@ void pingpong_init () {
         exit(1);
     }
 
-    /* Inicializa a main */
-    getcontext(&ContextMain);
-    char *stack = malloc (STACKSIZE);
-    if (stack)
-    {
-        ContextMain.uc_stack.ss_sp = stack;
-        ContextMain.uc_stack.ss_size = STACKSIZE;
-        ContextMain.uc_stack.ss_flags = 0;
-        ContextMain.uc_link = 0;
-    }
-
-    current_task = (task_t *)malloc(sizeof(task_t));
-    current_task->context = ContextMain;
-    task_create(current_task, (void *)task_create, (void *)(dispatcher, task_yield, NULL));
-    main_task = current_task;
+    task_yield();
 }
 
 // Cria uma nova tarefa. Retorna um ID> 0 ou erro.
@@ -221,6 +215,10 @@ int task_switch (task_t *task) {
         task->quantum = QUANTUM;
         task->last_called_time = systime();
         task->activations++;
+    }
+
+    if (temp->system_task == 1) {
+        temp->cpu_time += (systime() - temp->last_called_time);
     }
 
     current_task = task;
